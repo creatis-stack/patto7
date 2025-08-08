@@ -361,10 +361,8 @@ const PatternDigitizer = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-slate-800 mb-2">Patto7 Pattern Digitizer</h1>
-          <p className="text-slate-600">Transform paper patterns into precise digital formats</p>
+         <div class="text-center mb-8"> <img src="logo_patto.png" alt="Patto Logo" width="150" height="150"> </div>
         </div>
-
         <div className="flex gap-8">
           {/* Left Panel - Controls */}
           <div className="w-80 space-y-6">
