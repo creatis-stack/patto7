@@ -361,8 +361,14 @@ const PatternDigitizer = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-         <div class="text-center mb-8"> <img src="logo_patto.png" alt="Patto Logo" width="150" height="150"> </div>
-        </div>
+  <img 
+    src="/logo_patto.png" 
+    alt="Patto Logo" 
+    className="mx-auto mb-4"
+    width="150" 
+    height="150" 
+  />
+</div>
         <div className="flex gap-8">
           {/* Left Panel - Controls */}
           <div className="w-80 space-y-6">
