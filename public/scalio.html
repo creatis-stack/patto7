@@ -3,27 +3,500 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Scalio Test</title>
+  <title>Scalio - Embroidery Motif Resizer</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/lucide-react@0.263.1/dist/umd/lucide-react.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
   <div id="root"></div>
   
   <script>
-    function TestApp() {
-      return React.createElement('div', {
-        className: 'p-8 bg-blue-100 text-center'
-      }, 
-        React.createElement('h1', {
-          className: 'text-2xl font-bold text-blue-800'
-        }, 'Scalio Test - This should show up!')
+    const { useState, useRef } = React;
+    const { Upload, Download, ZoomIn, Eye, Ruler, Scissors } = LucideReact;
+
+    function EmbroideryMotifResizer() {
+      const [selectedImage, setSelectedImage] = useState(null);
+      const [imagePreview, setImagePreview] = useState(null);
+      const [currentMotifWidth, setCurrentMotifWidth] = useState('');
+      const [currentMotifHeight, setCurrentMotifHeight] = useState('');
+      const [targetMotifWidth, setTargetMotifWidth] = useState('');
+      const [targetMotifHeight, setTargetMotifHeight] = useState('');
+      const [previewImage, setPreviewImage] = useState(null);
+      const [showRuler, setShowRuler] = useState(true);
+      const [isProcessing, setIsProcessing] = useState(false);
+      const [outputFormat, setOutputFormat] = useState('a4-page');
+      
+      const fileInputRef = useRef(null);
+      const canvasRef = useRef(null);
+      const imageRef = useRef(null);
+
+      const handleImageUpload = (event) => {
+        const file = event.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+          setSelectedImage(file);
+          setPreviewImage(null);
+          
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            setImagePreview(e.target.result);
+            
+            const img = new Image();
+            img.onload = () => {
+              const widthInches = (img.naturalWidth / 300).toFixed(2);
+              const heightInches = (img.naturalHeight / 300).toFixed(2);
+              setCurrentMotifWidth(widthInches);
+              setCurrentMotifHeight(heightInches);
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const handleTargetWidthChange = (width) => {
+        setTargetMotifWidth(width);
+        if (width && currentMotifWidth && currentMotifHeight) {
+          const aspectRatio = parseFloat(currentMotifHeight) / parseFloat(currentMotifWidth);
+          const newHeight = (parseFloat(width) * aspectRatio).toFixed(2);
+          setTargetMotifHeight(newHeight);
+        }
+      };
+
+      const handleTargetHeightChange = (height) => {
+        setTargetMotifHeight(height);
+        if (height && currentMotifWidth && currentMotifHeight) {
+          const aspectRatio = parseFloat(currentMotifWidth) / parseFloat(currentMotifHeight);
+          const newWidth = (parseFloat(height) * aspectRatio).toFixed(2);
+          setTargetMotifWidth(newWidth);
+        }
+      };
+
+      const drawRuler = (ctx, canvasWidth, canvasHeight) => {
+        const dpi = 300;
+        const inchLength = dpi;
+        
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 2;
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const rulerHeight = 40;
+        const rulerWidth = 40;
+        
+        // Top ruler
+        ctx.fillRect(0, 0, canvasWidth, rulerHeight);
+        ctx.strokeRect(0, 0, canvasWidth, rulerHeight);
+        
+        for (let i = 0; i * inchLength < canvasWidth; i++) {
+          const x = i * inchLength;
+          
+          ctx.strokeStyle = '#374151';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x, rulerHeight);
+          ctx.lineTo(x, rulerHeight - 20);
+          ctx.stroke();
+          
+          if (i > 0) {
+            ctx.fillStyle = '#374151';
+            ctx.fillText(`${i}"`, x, rulerHeight / 2);
+          }
+          
+          const halfX = x + inchLength / 2;
+          if (halfX < canvasWidth) {
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(halfX, rulerHeight);
+            ctx.lineTo(halfX, rulerHeight - 10);
+            ctx.stroke();
+          }
+        }
+        
+        // Left ruler
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.fillRect(0, 0, rulerWidth, canvasHeight);
+        ctx.strokeRect(0, 0, rulerWidth, canvasHeight);
+        
+        for (let i = 0; i * inchLength < canvasHeight; i++) {
+          const y = i * inchLength;
+          
+          ctx.strokeStyle = '#374151';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(rulerWidth, y);
+          ctx.lineTo(rulerWidth - 20, y);
+          ctx.stroke();
+          
+          if (i > 0) {
+            ctx.save();
+            ctx.translate(rulerWidth / 2, y);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = '#374151';
+            ctx.fillText(`${i}"`, 0, 0);
+            ctx.restore();
+          }
+          
+          const halfY = y + inchLength / 2;
+          if (halfY < canvasHeight) {
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(rulerWidth, halfY);
+            ctx.lineTo(rulerWidth - 10, halfY);
+            ctx.stroke();
+          }
+        }
+        
+        ctx.restore();
+      };
+
+      const generatePreview = () => {
+        if (!selectedImage || !targetMotifWidth || !targetMotifHeight) return;
+
+        setIsProcessing(true);
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const img = imageRef.current;
+        
+        const motifWidthPx = Math.round(parseFloat(targetMotifWidth) * 300);
+        const motifHeightPx = Math.round(parseFloat(targetMotifHeight) * 300);
+        
+        if (outputFormat === 'a4-page') {
+          const a4WidthPx = 2480;
+          const a4HeightPx = 3508;
+          
+          canvas.width = a4WidthPx;
+          canvas.height = a4HeightPx;
+          
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, a4WidthPx, a4HeightPx);
+          
+          const motifX = (a4WidthPx - motifWidthPx) / 2;
+          const motifY = (a4HeightPx - motifHeightPx) / 2;
+          
+          ctx.drawImage(img, motifX, motifY, motifWidthPx, motifHeightPx);
+          
+          if (showRuler) {
+            drawRuler(ctx, a4WidthPx, a4HeightPx);
+          }
+          
+          ctx.strokeStyle = '#9ca3af';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([10, 5]);
+          ctx.strokeRect(motifX, motifY, motifWidthPx, motifHeightPx);
+          
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#374151';
+          ctx.font = 'bold 20px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(
+            `${targetMotifWidth}" × ${targetMotifHeight}"`, 
+            motifX + motifWidthPx / 2, 
+            motifY + motifHeightPx + 40
+          );
+          
+        } else {
+          canvas.width = motifWidthPx;
+          canvas.height = motifHeightPx;
+          
+          ctx.clearRect(0, 0, motifWidthPx, motifHeightPx);
+          ctx.drawImage(img, 0, 0, motifWidthPx, motifHeightPx);
+          
+          if (showRuler) {
+            drawRuler(ctx, motifWidthPx, motifHeightPx);
+          }
+        }
+        
+        setTimeout(() => {
+          const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+          setPreviewImage(dataURL);
+          setIsProcessing(false);
+        }, 100);
+      };
+
+      const downloadImage = () => {
+        if (!previewImage) return;
+        
+        const formatSuffix = outputFormat === 'a4-page' ? 'A4-page' : 'motif-only';
+        const link = document.createElement('a');
+        link.href = previewImage;
+        link.download = `embroidery-motif-${targetMotifWidth}x${targetMotifHeight}in-${formatSuffix}-300dpi.jpg`;
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      return React.createElement('div', { className: 'min-h-screen bg-slate-50 p-4 lg:p-6' },
+        React.createElement('div', { className: 'max-w-7xl mx-auto' },
+          // Header
+          React.createElement('div', { className: 'text-center mb-8' },
+            React.createElement('h1', { className: 'text-3xl lg:text-4xl font-light text-slate-800 mb-2' },
+              'Embroidery Motif Resizer'
+            ),
+            React.createElement('p', { className: 'text-slate-600 text-sm lg:text-base' },
+              'Precision scaling for embroidery patterns'
+            )
+          ),
+
+          // Instructions
+          React.createElement('div', { className: 'mb-6 bg-white border border-slate-200 rounded-lg p-4 shadow-sm' },
+            React.createElement('div', { className: 'flex items-center space-x-2 text-slate-700 mb-2' },
+              React.createElement(Scissors, { className: 'h-4 w-4' }),
+              React.createElement('span', { className: 'font-medium text-sm' }, 'Workflow')
+            ),
+            React.createElement('p', { className: 'text-sm text-slate-600 leading-relaxed' },
+              'Crop your motif image to remove backgrounds, upload below, set target dimensions, and generate your scaled pattern.'
+            )
+          ),
+
+          // Main Content
+          React.createElement('div', { className: 'grid grid-cols-1 xl:grid-cols-2 gap-6' },
+            // Left Column - Controls
+            React.createElement('div', { className: 'space-y-6' },
+              
+              // Upload Section
+              React.createElement('div', { className: 'bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden' },
+                React.createElement('div', { className: 'bg-slate-700 text-white px-4 py-3' },
+                  React.createElement('h2', { className: 'font-medium flex items-center text-sm' },
+                    React.createElement(Upload, { className: 'h-4 w-4 mr-2' }),
+                    'Upload Motif'
+                  )
+                ),
+                React.createElement('div', { className: 'p-4' },
+                  !imagePreview ? 
+                    React.createElement('div', { className: 'border-2 border-dashed border-slate-300 rounded-lg p-8 text-center bg-slate-50' },
+                      React.createElement(Upload, { className: 'mx-auto h-8 w-8 text-slate-400 mb-3' }),
+                      React.createElement('p', { className: 'text-slate-600 mb-4 text-sm' }, 'Select your prepared motif image'),
+                      React.createElement('input', {
+                        ref: fileInputRef,
+                        type: 'file',
+                        accept: 'image/*',
+                        onChange: handleImageUpload,
+                        className: 'hidden'
+                      }),
+                      React.createElement('button', {
+                        onClick: () => fileInputRef.current?.click(),
+                        className: 'bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-md font-medium text-sm transition-colors'
+                      }, 'Choose Image')
+                    ) :
+                    React.createElement('div', { className: 'text-center space-y-3' },
+                      React.createElement('img', {
+                        ref: imageRef,
+                        src: imagePreview,
+                        alt: 'Embroidery motif',
+                        className: 'max-w-full max-h-48 rounded-md shadow-sm mx-auto border border-slate-200'
+                      }),
+                      React.createElement('div', { className: 'text-xs text-slate-600 bg-slate-50 rounded px-3 py-2' },
+                        `Current size: ${currentMotifWidth}" × ${currentMotifHeight}"`
+                      ),
+                      React.createElement('button', {
+                        onClick: () => fileInputRef.current?.click(),
+                        className: 'text-slate-600 hover:text-slate-700 font-medium text-sm underline'
+                      }, 'Change Image'),
+                      React.createElement('input', {
+                        ref: fileInputRef,
+                        type: 'file',
+                        accept: 'image/*',
+                        onChange: handleImageUpload,
+                        className: 'hidden'
+                      })
+                    )
+                )
+              ),
+
+              // Size Controls
+              imagePreview && React.createElement('div', { className: 'bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden' },
+                React.createElement('div', { className: 'bg-slate-600 text-white px-4 py-3' },
+                  React.createElement('h2', { className: 'font-medium flex items-center text-sm' },
+                    React.createElement(ZoomIn, { className: 'h-4 w-4 mr-2' }),
+                    'Target Dimensions'
+                  )
+                ),
+                React.createElement('div', { className: 'p-4' },
+                  React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4' },
+                    React.createElement('div', null,
+                      React.createElement('label', { className: 'block text-xs font-medium text-slate-700 mb-2' },
+                        'Width (inches)'
+                      ),
+                      React.createElement('input', {
+                        type: 'number',
+                        step: '0.01',
+                        value: targetMotifWidth,
+                        onChange: (e) => handleTargetWidthChange(e.target.value),
+                        className: 'w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-1 focus:ring-slate-500 focus:border-slate-500',
+                        placeholder: 'Enter width'
+                      })
+                    ),
+                    React.createElement('div', null,
+                      React.createElement('label', { className: 'block text-xs font-medium text-slate-700 mb-2' },
+                        'Height (inches)'
+                      ),
+                      React.createElement('input', {
+                        type: 'number',
+                        step: '0.01',
+                        value: targetMotifHeight,
+                        onChange: (e) => handleTargetHeightChange(e.target.value),
+                        className: 'w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:ring-1 focus:ring-slate-500 focus:border-slate-500',
+                        placeholder: 'Enter height'
+                      })
+                    )
+                  ),
+                  targetMotifWidth && currentMotifWidth && React.createElement('div', { className: 'text-xs text-slate-600 bg-blue-50 border border-blue-200 rounded px-3 py-2 text-center' },
+                    `Scale factor: ${(parseFloat(targetMotifWidth) / parseFloat(currentMotifWidth)).toFixed(2)}×`
+                  )
+                )
+              ),
+
+              // Generate Controls
+              imagePreview && targetMotifWidth && targetMotifHeight && React.createElement('div', { className: 'bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden' },
+                React.createElement('div', { className: 'bg-slate-500 text-white px-4 py-3' },
+                  React.createElement('h2', { className: 'font-medium flex items-center text-sm' },
+                    React.createElement(Eye, { className: 'h-4 w-4 mr-2' }),
+                    'Output Settings'
+                  )
+                ),
+                React.createElement('div', { className: 'p-4 space-y-4' },
+                  React.createElement('div', null,
+                    React.createElement('label', { className: 'block text-xs font-medium text-slate-700 mb-2' },
+                      'Format'
+                    ),
+                    React.createElement('div', { className: 'grid grid-cols-1 sm:grid-cols-2 gap-2' },
+                      React.createElement('label', { className: 'flex items-center space-x-2 cursor-pointer bg-slate-50 p-3 rounded border hover:bg-slate-100 transition-colors' },
+                        React.createElement('input', {
+                          type: 'radio',
+                          name: 'outputFormat',
+                          value: 'motif-only',
+                          checked: outputFormat === 'motif-only',
+                          onChange: (e) => setOutputFormat(e.target.value),
+                          className: 'text-slate-600'
+                        }),
+                        React.createElement('span', { className: 'text-sm' }, 'Motif Only')
+                      ),
+                      React.createElement('label', { className: 'flex items-center space-x-2 cursor-pointer bg-slate-50 p-3 rounded border hover:bg-slate-100 transition-colors' },
+                        React.createElement('input', {
+                          type: 'radio',
+                          name: 'outputFormat',
+                          value: 'a4-page',
+                          checked: outputFormat === 'a4-page',
+                          onChange: (e) => setOutputFormat(e.target.value),
+                          className: 'text-slate-600'
+                        }),
+                        React.createElement('span', { className: 'text-sm' }, 'A4 Page')
+                      )
+                    )
+                  ),
+                  React.createElement('label', { className: 'flex items-center space-x-2 text-sm cursor-pointer' },
+                    React.createElement('input', {
+                      type: 'checkbox',
+                      checked: showRuler,
+                      onChange: (e) => setShowRuler(e.target.checked),
+                      className: 'rounded text-slate-600'
+                    }),
+                    React.createElement(Ruler, { className: 'h-4 w-4' }),
+                    React.createElement('span', null, 'Include ruler marks')
+                  ),
+                  React.createElement('button', {
+                    onClick: generatePreview,
+                    disabled: isProcessing,
+                    className: 'w-full bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400 text-white py-3 rounded-md font-medium flex items-center justify-center transition-colors'
+                  },
+                    isProcessing ? 
+                      [
+                        React.createElement('div', { className: 'animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2', key: 'spinner' }),
+                        'Processing...'
+                      ] :
+                      [
+                        React.createElement(Eye, { className: 'h-4 w-4 mr-2', key: 'eye' }),
+                        'Generate Preview'
+                      ]
+                  )
+                )
+              )
+            ),
+
+            // Right Column - Preview
+            React.createElement('div', { className: 'xl:sticky xl:top-6 xl:self-start' },
+              previewImage ? 
+                React.createElement('div', { className: 'bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden' },
+                  React.createElement('div', { className: 'bg-slate-800 text-white px-4 py-3 flex justify-between items-center' },
+                    React.createElement('h2', { className: 'font-medium flex items-center text-sm' },
+                      React.createElement(Eye, { className: 'h-4 w-4 mr-2' }),
+                      'Preview'
+                    ),
+                    React.createElement('button', {
+                      onClick: downloadImage,
+                      className: 'bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-sm font-medium flex items-center transition-colors'
+                    },
+                      React.createElement(Download, { className: 'h-3 w-3 mr-1' }),
+                      'Download'
+                    )
+                  ),
+                  React.createElement('div', { className: 'p-4' },
+                    React.createElement('div', { className: 'text-center mb-4' },
+                      React.createElement('img', {
+                        src: previewImage,
+                        alt: 'Resized motif',
+                        className: 'max-w-full max-h-96 rounded-md shadow-sm border border-slate-200 mx-auto'
+                      })
+                    ),
+                    React.createElement('div', { className: 'space-y-3' },
+                      React.createElement('div', { className: 'text-center' },
+                        React.createElement('p', { className: 'font-medium text-slate-800 text-sm' },
+                          `${targetMotifWidth}" × ${targetMotifHeight}" @ 300 DPI`
+                        )
+                      ),
+                      outputFormat === 'a4-page' ?
+                        React.createElement('div', { className: 'bg-emerald-50 border border-emerald-200 rounded-md p-3' },
+                          React.createElement('p', { className: 'text-emerald-800 text-xs font-medium' },
+                            '✓ Ready to print on standard A4 paper'
+                          )
+                        ) :
+                        React.createElement('div', { className: 'bg-blue-50 border border-blue-200 rounded-md p-3' },
+                          React.createElement('p', { className: 'text-blue-800 text-xs' },
+                            [
+                              React.createElement('span', { className: 'font-medium', key: 'label' }, 'Resolution: '),
+                              `${Math.round(parseFloat(targetMotifWidth) * 300)} × ${Math.round(parseFloat(targetMotifHeight) * 300)} pixels`
+                            ]
+                          )
+                        )
+                    )
+                  )
+                ) :
+                React.createElement('div', { className: 'bg-white border border-slate-200 rounded-lg shadow-sm p-12 text-center' },
+                  React.createElement('div', { className: 'text-slate-400' },
+                    React.createElement(Eye, { className: 'h-16 w-16 mx-auto mb-4 opacity-50' }),
+                    React.createElement('p', { className: 'text-sm mb-1' }, 'Preview area'),
+                    React.createElement('p', { className: 'text-xs text-slate-500' },
+                      'Your scaled motif will appear here'
+                    )
+                  )
+                )
+            )
+          ),
+
+          // Hidden canvas
+          React.createElement('canvas', { ref: canvasRef, className: 'hidden' })
+        )
       );
     }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(React.createElement(TestApp));
+    // Wait for all scripts to load before rendering
+    if (window.React && window.ReactDOM && window.LucideReact) {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(React.createElement(EmbroideryMotifResizer));
+    } else {
+      // Fallback: wait a bit more for scripts to load
+      setTimeout(() => {
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(EmbroideryMotifResizer));
+      }, 500);
+    }
   </script>
 </body>
 </html>
